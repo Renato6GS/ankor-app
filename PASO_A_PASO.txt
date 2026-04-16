@@ -1,0 +1,641 @@
+================================================================================
+  PASO A PASO — PROYECTO ANKOR: AUDITORÍA DE SEGURIDAD INFORMÁTICA
+  Universidad Mariano Gálvez de Guatemala
+  Seguridad en Redes TCP/IP y Seguridad de Datos
+================================================================================
+
+Este documento guía el desarrollo completo del proyecto en orden secuencial.
+Cada paso indica QUÉ hacer, POR QUÉ y QUIÉN es responsable.
+
+================================================================================
+FASE 0: SETUP INICIAL DEL PROYECTO
+================================================================================
+
+PASO 0.1 — Crear proyecto Next.js con Mantine
+----------------------------------------------
+Responsable: Cualquiera (setup compartido)
+
+  pnpm create mantine-app@latest ankor --template app-router
+  cd ankor
+  pnpm install
+
+Verificar que funcione:
+  pnpm dev
+  → Abrir http://localhost:3000
+
+PASO 0.2 — Agregar dependencias base
+-------------------------------------
+  pnpm add prisma @prisma/client bcryptjs
+  pnpm add -D @types/bcryptjs
+  npx prisma init
+
+Esto crea la carpeta prisma/ con schema.prisma y un .env con DATABASE_URL.
+
+PASO 0.3 — Definir modelos en Prisma
+-------------------------------------
+Editar prisma/schema.prisma con los modelos:
+- User (id, email, password, name, role, address, phone, createdAt)
+- Product (id, name, description, price, image, stock, categoryId, createdAt)
+- Category (id, name, slug)
+- Order (id, userId, total, status, createdAt)
+- OrderItem (id, orderId, productId, quantity, price)
+
+Roles: enum Role { CUSTOMER ADMIN }
+Status: enum OrderStatus { PENDING CONFIRMED SHIPPED DELIVERED }
+
+PASO 0.4 — Docker Compose para PostgreSQL
+------------------------------------------
+Crear docker-compose.yml con servicio de PostgreSQL:
+- Imagen: postgres:16
+- Usuario: ankor / Password: ankor123 / DB: ankor
+- Puerto: 5432:5432
+
+Levantar:
+  docker compose up -d db
+
+PASO 0.5 — Sincronizar DB y crear seed
+---------------------------------------
+  npx prisma db push
+  
+Crear prisma/seed.ts con datos iniciales:
+- Admin: admin@ankor.gt / admin123
+- Customer: maria@gmail.com / maria123
+- 3 categorías, 6-8 productos, 2-3 pedidos
+
+Ejecutar seed:
+  npx prisma db seed
+
+
+================================================================================
+FASE 1: DESARROLLO DE LA APP VULNERABLE (POS — Punto de Partida)
+================================================================================
+
+Esta fase construye la app con TODAS las vulnerabilidades presentes
+intencionalmente. No se implementa ninguna medida de seguridad aún.
+
+PASO 1.1 — Cliente de base de datos CON secreto hardcodeado (V5)
+-----------------------------------------------------------------
+Responsable: Andrea Garrido (V5)
+
+Crear src/lib/db.ts:
+- Importar PrismaClient
+- INTENCIONAL: Escribir el DATABASE_URL como string literal en el código:
+  
+  const databaseUrl = "postgresql://ankor:ankor123@db:5432/ankor"
+
+- Exportar instancia singleton de PrismaClient
+- NO usar process.env.DATABASE_URL (eso viene en la mitigación)
+
+¿POR QUÉ? Esto demuestra V5 (secretos en código fuente). Cuando el repo se
+comparta, las credenciales de la DB quedan expuestas.
+
+PASO 1.2 — API de autenticación SIN rate limiting (V3, V6)
+------------------------------------------------------------
+Responsable: Renato Granados (V3) / Andrea Garrido (V6)
+
+Crear los endpoints:
+
+src/app/api/auth/login/route.ts
+  - POST: recibe { email, password }
+  - Busca usuario en DB, compara password con bcrypt
+  - Si es válido: setea cookie simple (sin iron-session)
+  - INTENCIONAL: Sin ningún límite de intentos (V3)
+  - INTENCIONAL: No registra intentos fallidos (V7)
+
+src/app/api/auth/register/route.ts
+  - POST: recibe { email, password, name }
+  - Crea usuario con rol CUSTOMER
+  - Hash del password con bcrypt
+
+src/app/api/auth/logout/route.ts
+  - POST: elimina cookie de sesión
+
+Sesión vulnerable: usar una cookie simple con JSON del userId,
+sin firma ni encriptación. Ejemplo:
+  cookies().set("session", JSON.stringify({ userId: user.id, role: user.role }))
+
+PASO 1.3 — APIs SIN autenticación (V6)
+----------------------------------------
+Responsable: Andrea Garrido
+
+Crear endpoints que NO validan si el usuario está logueado:
+
+src/app/api/products/route.ts
+  - GET: lista todos los productos (este puede ser público, es normal)
+  - POST: crear producto (DEBERÍA requerir admin, pero no lo valida)
+
+src/app/api/users/route.ts
+  - GET: lista TODOS los usuarios con sus datos (email, nombre, dirección)
+  - INTENCIONAL: Cualquiera puede acceder sin autenticación (V6)
+
+src/app/api/orders/route.ts
+  - GET: lista TODOS los pedidos de TODOS los usuarios
+  - INTENCIONAL: No filtra por usuario logueado (V6)
+
+src/app/api/admin/route.ts
+  - GET: devuelve estadísticas (total usuarios, pedidos, ingresos)
+  - INTENCIONAL: No valida rol admin (V6)
+
+PASO 1.4 — Páginas del frontend
+---------------------------------
+Responsable: Compartido
+
+src/app/page.tsx — Landing / Catálogo
+  - Fetch a /api/products
+  - Grid de cards con Mantine (imagen, nombre, precio, botón agregar)
+
+src/app/login/page.tsx — Login
+  - Formulario con Mantine: email + password
+  - POST a /api/auth/login
+  - Redireccionar a / si éxito
+
+src/app/cart/page.tsx — Carrito
+  - Estado local (useState o context)
+  - Lista de items, cantidad, total
+  - Botón "Confirmar pedido" → POST /api/orders
+
+src/app/profile/page.tsx — Perfil
+  - Muestra datos del usuario logueado
+  - Lista de sus pedidos
+
+src/app/admin/page.tsx — Panel Admin
+  - INTENCIONAL: Sin validación de acceso. Cualquiera que navegue a /admin ve el panel (V4, V6)
+  - Tabla de usuarios
+  - Tabla de productos con botones CRUD
+  - Tabla de pedidos
+
+PASO 1.5 — Dockerfile SIN optimizar (V9)
+------------------------------------------
+Responsable: Renato Granados
+
+Crear Dockerfile:
+  FROM node:20           ← (Sin alpine, sin versión fija → V9)
+  WORKDIR /app
+  COPY . .
+  RUN npm install -g pnpm && pnpm install
+  RUN pnpm build
+  EXPOSE 3000
+  CMD ["pnpm", "start"]
+
+INTENCIONAL: Base image pesada, sin escaneo, sin multi-stage build.
+
+PASO 1.6 — next.config.js SIN headers de seguridad (V8)
+---------------------------------------------------------
+Responsable: Luis Castillo
+
+Verificar que next.config.js NO tenga configuración de headers.
+La app no envía CSP, HSTS, X-Frame-Options, X-Content-Type-Options.
+
+PASO 1.7 — Verificar ausencia de logging (V7)
+-----------------------------------------------
+Responsable: Andrea Garrido
+
+Confirmar que en ningún endpoint ni middleware hay logging estructurado.
+Solo puede haber console.log básicos de desarrollo (que no cuentan como
+logging de auditoría).
+
+PASO 1.8 — Docker Compose completo (app + db)
+-----------------------------------------------
+Actualizar docker-compose.yml para incluir el servicio de la app:
+- Build desde Dockerfile
+- Puerto 3000:3000 expuesto directamente (V2)
+- Variable de entorno o hardcodeado (V5)
+- Sin Nginx al frente (V1, V2)
+
+Levantar todo:
+  docker compose up -d --build
+  → Accesible en http://<IP>:3000
+
+
+================================================================================
+FASE 2: DOCUMENTACIÓN DEL ESTADO VULNERABLE (Evidencia "ANTES")
+================================================================================
+
+PASO 2.1 — Escaneo con Nmap
+-----------------------------
+Herramienta: Nmap
+Responsable: Luis Castillo
+
+  nmap -sV -p 1-10000 <IP_DEL_SERVIDOR>
+
+Capturar:
+  - Puerto 3000 abierto (HTTP)
+  - Puerto 5432 abierto (PostgreSQL) ← si está expuesto
+  - Servicios detectados
+
+Guardar captura en docs/evidencias/nmap-antes.png
+
+PASO 2.2 — Escaneo con OWASP ZAP
+-----------------------------------
+Herramienta: OWASP ZAP
+Responsable: Andrea Garrido
+
+  - Correr spider + active scan sobre http://<IP>:3000
+  - Exportar reporte HTML
+
+Esperado en el reporte:
+  - Alerta: sin HTTPS
+  - Alerta: headers de seguridad faltantes
+  - Alerta: formularios sin protección CSRF
+  - Alerta: cookies sin flags Secure/HttpOnly
+
+Guardar en docs/evidencias/zap-antes.html
+
+PASO 2.3 — Escaneo con Trivy
+------------------------------
+Herramienta: Trivy
+Responsable: Renato Granados
+
+  trivy image ankor-app:latest
+
+Capturar:
+  - Lista de CVEs encontrados en la imagen
+  - Severidad (CRITICAL, HIGH, MEDIUM, LOW)
+
+Guardar en docs/evidencias/trivy-antes.png
+
+PASO 2.4 — Prueba manual de vulnerabilidades
+----------------------------------------------
+Documentar con capturas:
+
+  V3: Usar curl en loop para demostrar fuerza bruta sin bloqueo:
+      for i in $(seq 1 100); do
+        curl -s -o /dev/null -w "%{http_code}" -X POST http://<IP>:3000/api/auth/login \
+          -H "Content-Type: application/json" \
+          -d '{"email":"admin@ankor.gt","password":"wrong'$i'"}'
+      done
+      → Todas retornan 401, ninguna es bloqueada
+
+  V5: Mostrar grep del código con credenciales hardcodeadas:
+      grep -r "postgresql://" src/
+
+  V6: Acceder a APIs sin token:
+      curl http://<IP>:3000/api/users
+      curl http://<IP>:3000/api/orders
+      → Retornan datos sin autenticación
+
+  V8: Inspeccionar headers HTTP:
+      curl -I http://<IP>:3000
+      → Sin CSP, HSTS, X-Frame-Options
+
+
+================================================================================
+FASE 3: MITIGACIÓN DE VULNERABILIDADES
+================================================================================
+
+Cada mitigación se implementa, se documenta con capturas y se valida.
+
+------------------------------------------------------------------------
+BLOQUE A — Luis Castillo: V1, V2, V8, V3 parcial
+------------------------------------------------------------------------
+
+PASO 3A.1 — Instalar y configurar Nginx como reverse proxy (V2)
+-----------------------------------------------------------------
+Crear nginx/default.conf:
+  - Upstream apuntando a app:3000
+  - Servidor escuchando en puerto 80 (temporalmente)
+  - proxy_pass al upstream
+  - proxy_set_header Host, X-Real-IP, X-Forwarded-For, X-Forwarded-Proto
+
+Agregar servicio nginx a docker-compose.yml:
+  - Imagen: nginx:alpine
+  - Puertos: 80:80, 443:443
+  - Volumen: ./nginx/default.conf → /etc/nginx/conf.d/default.conf
+  - Depende de: app
+
+Modificar servicio app:
+  - Cambiar ports de "3000:3000" a expose: ["3000"]
+  - El puerto 3000 ya NO es accesible desde fuera
+
+Validar: 
+  curl http://<IP>        → funciona (a través de Nginx)
+  curl http://<IP>:3000   → connection refused (ya no expuesto)
+
+PASO 3A.2 — Configurar HTTPS con certificado (V1)
+----------------------------------------------------
+Opción A (producción con dominio): Certbot + Let's Encrypt
+  - Instalar certbot en el host o usar imagen certbot/certbot
+  - Obtener certificado para el dominio
+  - Configurar Nginx con ssl_certificate y ssl_certificate_key
+
+Opción B (demo sin dominio): Certificado autofirmado
+  openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    -keyout nginx/ssl/self-signed.key \
+    -out nginx/ssl/self-signed.crt
+
+Actualizar nginx/default.conf:
+  - Servidor en 443 con ssl
+  - Redireccion 80 → 443
+  - ssl_protocols TLSv1.2 TLSv1.3
+  - ssl_ciphers con suites seguras
+
+Validar:
+  curl -k https://<IP>    → funciona con TLS
+  curl http://<IP>         → redirige a https
+
+PASO 3A.3 — Headers de seguridad en Nginx (V8)
+-------------------------------------------------
+Agregar en nginx/default.conf dentro del bloque server:
+
+  add_header X-Frame-Options "SAMEORIGIN" always;
+  add_header X-Content-Type-Options "nosniff" always;
+  add_header X-XSS-Protection "1; mode=block" always;
+  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+  add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;" always;
+  add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+Validar:
+  curl -I https://<IP>
+  → Todos los headers presentes
+
+PASO 3A.4 — Rate limiting en Nginx (V3 parcial)
+--------------------------------------------------
+Agregar en nginx/default.conf:
+
+  # En el bloque http (o fuera de server):
+  limit_req_zone $binary_remote_addr zone=login:10m rate=5r/m;
+
+  # En location /api/auth/login:
+  location /api/auth/login {
+      limit_req zone=login burst=3 nodelay;
+      proxy_pass http://app:3000;
+  }
+
+Validar:
+  Repetir la prueba de fuerza bruta del paso 2.4
+  → Después de 5 intentos por minuto, Nginx retorna 429
+
+------------------------------------------------------------------------
+BLOQUE B — Renato Granados: V3 parcial (app), V4, V9
+------------------------------------------------------------------------
+
+PASO 3B.1 — Rate limiting en la aplicación (V3 parcial)
+---------------------------------------------------------
+Crear un rate limiter in-memory en src/lib/rate-limit.ts:
+  - Map de IP → { count, lastReset }
+  - Ventana de 60 segundos
+  - Máximo 5 intentos por ventana
+  - Función: checkRateLimit(ip: string): { allowed: boolean, remaining: number }
+
+Integrar en src/app/api/auth/login/route.ts:
+  - Antes de verificar credenciales, llamar a checkRateLimit
+  - Si no permitido → retornar 429 Too Many Requests
+
+Validar:
+  Repetir curl en loop → 429 después de 5 intentos
+
+PASO 3B.2 — VPN con WireGuard para panel admin (V4)
+-----------------------------------------------------
+Configurar WireGuard en el servidor:
+  - Instalar wireguard en el host
+  - Generar llaves: wg genkey, wg pubkey
+  - Configurar /etc/wireguard/wg0.conf (interfaz servidor)
+  - Configurar cliente con su llave
+
+Restringir acceso al panel admin por IP de VPN:
+  Opción 1 — En Nginx:
+    location /admin {
+        allow 10.0.0.0/24;      # Red VPN
+        deny all;
+        proxy_pass http://app:3000;
+    }
+  
+  Opción 2 — En middleware de Next.js:
+    Verificar header X-Real-IP contra lista de IPs permitidas
+
+Validar:
+  - Sin VPN: curl https://<IP>/admin → 403 Forbidden
+  - Con VPN: curl https://10.0.0.1/admin → 200 OK
+
+PASO 3B.3 — Escaneo y hardening de imagen Docker (V9)
+-------------------------------------------------------
+1. Escanear imagen actual:
+   trivy image ankor-app:latest → guardar evidencia
+
+2. Modificar Dockerfile:
+   - Cambiar FROM node:20 → FROM node:20.11-alpine
+   - Multi-stage build:
+     Stage 1 (builder): instalar deps + build
+     Stage 2 (runner): solo copiar lo necesario
+   - Agregar usuario no-root:
+     RUN addgroup -S ankor && adduser -S ankor -G ankor
+     USER ankor
+
+3. Reconstruir y escanear:
+   docker compose build app
+   trivy image ankor-app:latest → guardar evidencia
+
+Validar:
+  Comparar cantidad de CVEs antes vs después
+
+------------------------------------------------------------------------
+BLOQUE C — Andrea Garrido: V5, V6, V7
+------------------------------------------------------------------------
+
+PASO 3C.1 — Migrar secretos a variables de entorno (V5)
+---------------------------------------------------------
+1. Crear .env en la raíz:
+   DATABASE_URL="postgresql://ankor:ankor123@db:5432/ankor"
+   SESSION_SECRET="una-clave-secreta-de-al-menos-32-caracteres"
+   NODE_ENV="production"
+
+2. Crear .env.example (sin valores reales):
+   DATABASE_URL="postgresql://user:password@host:5432/dbname"
+   SESSION_SECRET="cambiar-esta-clave"
+   NODE_ENV="development"
+
+3. Agregar .env a .gitignore
+
+4. Modificar src/lib/db.ts:
+   - Eliminar el string hardcodeado
+   - Usar: new PrismaClient() (que lee DATABASE_URL del .env automáticamente)
+
+5. En docker-compose.yml, pasar variables con env_file o environment
+
+Validar:
+  grep -r "postgresql://" src/ → sin resultados
+  grep -r "ankor123" src/ → sin resultados
+
+PASO 3C.2 — Proteger APIs con autenticación (V6)
+--------------------------------------------------
+1. Instalar iron-session:
+   pnpm add iron-session
+
+2. Crear src/lib/auth.ts:
+   - Configurar iron-session con SESSION_SECRET desde .env
+   - Helper: getSession(req) → devuelve sesión o null
+   - Helper: requireAuth(req) → lanza 401 si no hay sesión
+   - Helper: requireAdmin(req) → lanza 403 si role !== ADMIN
+
+3. Actualizar endpoint de login:
+   - Usar iron-session para crear sesión segura (cookie encriptada)
+
+4. Proteger endpoints:
+   /api/users → requireAdmin
+   /api/orders → requireAuth (filtrar por userId de la sesión)
+   /api/admin → requireAdmin
+   /api/products POST → requireAdmin (GET puede ser público)
+
+5. Proteger página /admin:
+   - Verificar sesión en el servidor (server component)
+   - Redirigir a /login si no es admin
+
+Validar:
+  curl https://<IP>/api/users → 401 Unauthorized
+  curl https://<IP>/api/orders → 401 Unauthorized
+  (Con cookie válida de admin → 200 OK)
+
+PASO 3C.3 — Implementar logging con PinoJS (V7)
+--------------------------------------------------
+1. Instalar pino:
+   pnpm add pino pino-pretty
+
+2. Crear src/lib/logger.ts:
+   - Instancia de pino con nivel 'info'
+   - Formato JSON para producción, pretty para dev
+
+3. Agregar logging en puntos clave:
+   - Login exitoso: logger.info({ userId, email }, "Login exitoso")
+   - Login fallido: logger.warn({ email, ip }, "Login fallido")
+   - Acceso a API protegida: logger.info({ userId, endpoint }, "Acceso API")
+   - Error de autenticación: logger.warn({ ip, endpoint }, "Acceso no autorizado")
+   - Acciones de admin: logger.info({ adminId, action }, "Acción admin")
+   - Errores del servidor: logger.error({ error }, "Error interno")
+
+4. Opcional: Escribir logs a archivo con pino.destination
+
+Validar:
+  - Hacer login → ver log en consola/archivo
+  - Intentar acceso no autorizado → ver log de warning
+  - Acción de admin → ver log de la acción
+
+
+================================================================================
+FASE 4: VALIDACIÓN FINAL (Evidencia "DESPUÉS")
+================================================================================
+
+PASO 4.1 — Re-escaneo con Nmap
+--------------------------------
+Responsable: Luis Castillo
+
+  nmap -sV -p 1-10000 <IP>
+
+Esperado:
+  - Solo puertos 80 y 443 abiertos
+  - Puerto 3000 cerrado
+  - Puerto 5432 cerrado (o filtrado)
+
+Guardar en docs/evidencias/nmap-despues.png
+
+PASO 4.2 — Re-escaneo con OWASP ZAP
+--------------------------------------
+Responsable: Andrea Garrido
+
+  - Spider + active scan sobre https://<IP>
+  - Exportar reporte HTML
+
+Esperado:
+  - Sin alertas de HTTPS
+  - Headers de seguridad presentes
+  - Cookies con flags Secure y HttpOnly
+
+Guardar en docs/evidencias/zap-despues.html
+
+PASO 4.3 — Re-escaneo con Trivy
+---------------------------------
+Responsable: Renato Granados
+
+  trivy image ankor-app:latest
+
+Esperado:
+  - Significativamente menos CVEs
+  - Sin CVEs CRITICAL (idealmente)
+
+Guardar en docs/evidencias/trivy-despues.png
+
+PASO 4.4 — Pruebas manuales de mitigaciones
+---------------------------------------------
+Repetir todas las pruebas del paso 2.4 y documentar:
+
+  V1: curl -I https://<IP> → TLS activo ✓
+  V2: curl http://<IP>:3000 → rechazado ✓
+  V3: curl loop de fuerza bruta → bloqueado por rate limit ✓
+  V4: curl https://<IP>/admin sin VPN → 403 ✓
+  V5: grep -r "postgresql://" src/ → sin resultados ✓
+  V6: curl https://<IP>/api/users sin sesión → 401 ✓
+  V7: Revisar logs → acciones registradas ✓
+  V8: curl -I https://<IP> → headers presentes ✓
+  V9: trivy → menos CVEs ✓
+
+
+================================================================================
+FASE 5: DOCUMENTACIÓN FINAL
+================================================================================
+
+PASO 5.1 — Compilar documento final
+-------------------------------------
+Responsable: Todos
+
+Incluir:
+  - Portada
+  - Índice actualizado
+  - Secciones 1-4 del entregable 1 (ya hecho)
+  - Sección de implementación con capturas antes/después por vulnerabilidad
+  - Tabla comparativa de herramientas usadas
+  - Conclusiones y recomendaciones
+  - Bibliografía/referencias
+
+PASO 5.2 — Organizar evidencias
+---------------------------------
+  docs/evidencias/
+  ├── nmap-antes.png
+  ├── nmap-despues.png
+  ├── zap-antes.html
+  ├── zap-despues.html
+  ├── trivy-antes.png
+  ├── trivy-despues.png
+  ├── v1-https-antes.png
+  ├── v1-https-despues.png
+  ├── v3-bruteforce-antes.png
+  ├── v3-bruteforce-despues.png
+  ├── v5-secretos-antes.png
+  ├── v5-secretos-despues.png
+  ├── v6-api-antes.png
+  ├── v6-api-despues.png
+  ├── v7-logging-despues.png
+  ├── v8-headers-antes.png
+  ├── v8-headers-despues.png
+  └── v9-docker-antes-despues.png
+
+
+================================================================================
+RESUMEN DE HERRAMIENTAS (6 externas)
+================================================================================
+
+  1. Nginx        → Reverse proxy, TLS, headers, rate limit
+  2. Certbot      → Certificados TLS (Let's Encrypt)
+  3. WireGuard    → VPN para acceso restringido
+  4. OWASP ZAP    → Escaneo de vulnerabilidades web
+  5. Nmap         → Escaneo de puertos y servicios
+  6. Trivy        → Escaneo de imágenes Docker
+
++ Herramientas de código:
+  - iron-session  → Sesiones seguras
+  - PinoJS        → Logging estructurado
+  - bcryptjs      → Hash de contraseñas
+  - Prisma        → ORM
+
+
+================================================================================
+RESUMEN DE RESPONSABILIDADES
+================================================================================
+
+  Luis Castillo:     V1, V2, V8, V3 (Nginx)  → Pasos 3A.1 a 3A.4
+  Renato Granados:   V3 (app), V4, V9         → Pasos 3B.1 a 3B.3
+  Andrea Garrido:    V5, V6, V7               → Pasos 3C.1 a 3C.3
+
+  Todos contribuyen a: Fase 0, Fase 1, Fase 2, Fase 4, Fase 5
+
+================================================================================
+FIN DEL DOCUMENTO
+================================================================================
