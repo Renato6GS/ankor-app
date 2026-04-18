@@ -4,7 +4,7 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
-const databaseUrl = "postgresql://ankor:ankor123@db:5432/ankor";
+const databaseUrl = "postgresql://ankor:ankor123@localhost:5432/ankor";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;

@@ -133,7 +133,7 @@ src/app/api/products/route.ts
   - POST: crear producto (DEBERÍA requerir admin, pero no lo valida)
 
 src/app/api/users/route.ts
-  - GET: lista TODOS los usuarios con sus datos (email, nombre, dirección)
+  - GET: lista TODOS los usuarios con sus datos (email, nombre, dirección; no debería de pasar)
   - INTENCIONAL: Cualquiera puede acceder sin autenticación (V6)
 
 src/app/api/orders/route.ts
