@@ -1,3 +1,43 @@
+SET UP para levantar el proyecto:
+
+Tener Docker y ejecutar este comando en la terminal (bash):
+
+pnpm install
+docker compose up -d --build
+npx prisma db push
+npx prisma db seed
+
+Al hacerlo, ya debería funcionar la DB y la app. Entrar a localhost:3000
+
+Usuarios:
+- Admin: admin@ankor.gt / admin123
+- Customer: maria@gmail.com / maria123
+
+¿Cómo conectarse al DB con PGAdmin?
+
+Campo- Valor
+Host name/address - localhost
+Port - 5432
+Maintenance database - ankor
+Username - ankor
+Password - ankor123
+
+
+Borrar todo:
+
+ankor-app on  main [!⇡] via  v24.10.0
+❯ docker compose down -v
+[+] down 4/4
+ ✔ Container ankor-app-app-1 Removed                                                                                                                                                         10.5s
+ ✔ Container ankor-app-db-1  Removed                                                                                                                                                         0.6s
+ ✔ Volume ankor-app_pgdata   Removed                                                                                                                                                         0.0s
+ ✔ Network ankor-app_default Removed                                                                                                                                                         0.5s
+
+ankor-app on  main [!⇡] via  v24.10.0 took 11s
+❯ docker compose down -v --rmi local
+[+] down 1/1
+ ✔ Image ankor-app-app:latest Removed   
+
 ================================================================================
   PASO A PASO — PROYECTO ANKOR: AUDITORÍA DE SEGURIDAD INFORMÁTICA
   Universidad Mariano Gálvez de Guatemala
@@ -64,15 +104,6 @@ Crear prisma/seed.ts con datos iniciales:
 
 Ejecutar seed:
   npx prisma db seed
-
-¿Cómo conectarse al DB con PGAdmin?
-
-Campo- Valor
-Host name/address - localhost
-Port - 5432
-Maintenance database - ankor
-Username - ankor
-Password - ankor123
 
 ================================================================================
 FASE 1: DESARROLLO DE LA APP VULNERABLE (POS — Punto de Partida)
@@ -231,7 +262,7 @@ Capturar:
   - Puerto 5432 abierto (PostgreSQL) ← si está expuesto
   - Servicios detectados
 
-Guardar captura en docs/evidencias/nmap-antes.png
+Documentarlo en un word con capturas y explicación. Este es el estado ANTES
 
 PASO 2.2 — Escaneo con OWASP ZAP
 -----------------------------------
@@ -247,7 +278,7 @@ Esperado en el reporte:
   - Alerta: formularios sin protección CSRF
   - Alerta: cookies sin flags Secure/HttpOnly
 
-Guardar en docs/evidencias/zap-antes.html
+Documentarlo en un word con capturas y explicación. Este es el estado ANTES
 
 PASO 2.3 — Escaneo con Trivy
 ------------------------------
@@ -260,7 +291,7 @@ Capturar:
   - Lista de CVEs encontrados en la imagen
   - Severidad (CRITICAL, HIGH, MEDIUM, LOW)
 
-Guardar en docs/evidencias/trivy-antes.png
+Documentarlo en un word con capturas y explicación. Este es el estado ANTES
 
 PASO 2.4 — Prueba manual de vulnerabilidades
 ----------------------------------------------
@@ -533,7 +564,7 @@ Esperado:
   - Puerto 3000 cerrado
   - Puerto 5432 cerrado (o filtrado)
 
-Guardar en docs/evidencias/nmap-despues.png
+Documentarlo en un word con capturas y explicación. Este es el estado DESPUÉS
 
 PASO 4.2 — Re-escaneo con OWASP ZAP
 --------------------------------------
@@ -547,7 +578,7 @@ Esperado:
   - Headers de seguridad presentes
   - Cookies con flags Secure y HttpOnly
 
-Guardar en docs/evidencias/zap-despues.html
+Documentarlo en un word con capturas y explicación. Este es el estado DESPUÉS
 
 PASO 4.3 — Re-escaneo con Trivy
 ---------------------------------
@@ -559,7 +590,7 @@ Esperado:
   - Significativamente menos CVEs
   - Sin CVEs CRITICAL (idealmente)
 
-Guardar en docs/evidencias/trivy-despues.png
+Documentarlo en un word con capturas y explicación. Este es el estado DESPUÉS
 
 PASO 4.4 — Pruebas manuales de mitigaciones
 ---------------------------------------------
@@ -641,8 +672,6 @@ RESUMEN DE RESPONSABILIDADES
   Luis Castillo:     V1, V2, V8, V3 (Nginx)  → Pasos 3A.1 a 3A.4
   Renato Granados:   V3 (app), V4, V9         → Pasos 3B.1 a 3B.3
   Andrea Garrido:    V5, V6, V7               → Pasos 3C.1 a 3C.3
-
-  Todos contribuyen a: Fase 0, Fase 1, Fase 2, Fase 4, Fase 5
 
 ================================================================================
 FIN DEL DOCUMENTO
