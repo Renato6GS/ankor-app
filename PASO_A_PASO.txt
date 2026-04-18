@@ -65,6 +65,14 @@ Crear prisma/seed.ts con datos iniciales:
 Ejecutar seed:
   npx prisma db seed
 
+¿Cómo conectarse al DB con PGAdmin?
+
+Campo- Valor
+Host name/address - localhost
+Port - 5432
+Maintenance database - ankor
+Username - ankor
+Password - ankor123
 
 ================================================================================
 FASE 1: DESARROLLO DE LA APP VULNERABLE (POS — Punto de Partida)
