@@ -1,5 +1,10 @@
 {
   "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@generated/*": ["./generated/*"]
+    },
     "target": "es2015",
     "lib": [
       "dom",

@@ -13,7 +13,11 @@ WORKDIR /app
 
 COPY . .
 
-RUN npm install -g pnpm && pnpm install
+# Buena práctica:
+# RUN npm install -g pnpm && pnpm install
+
+# Mala práctica:
+RUN npm install -g pnpm && CI=true pnpm install
 
 RUN pnpm build
 
