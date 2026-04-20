@@ -3,10 +3,6 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 
-// V3 (INTENCIONAL): sin rate limiting ni contador de intentos.
-// V7 (INTENCIONAL): no se registra ningún intento (éxito ni fallo).
-// Sesión vulnerable: cookie en texto plano con userId y role, sin firma ni cifrado.
-// Mitigación posterior: rate limit en middleware + iron-session + logging con Pino.
 export async function POST(req: Request) {
   const { email, password } = await req.json();
 

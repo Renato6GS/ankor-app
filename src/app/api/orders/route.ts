@@ -11,8 +11,12 @@ export async function GET() {
   const orders = await prisma.order.findMany({
     where,
     include: {
-      user: { select: { id: true, email: true, name: true } },
-      items: { include: { product: true } },
+      user: {
+        select: { id: true, email: true, name: true },
+      },
+      items: {
+        include: { product: true },
+      },
     },
     orderBy: { createdAt: "desc" },
   });
@@ -35,8 +39,7 @@ export async function POST(req: Request) {
 
   const productIds = items.map((i: { productId: number }) => i.productId);
   const products = await prisma.product.findMany({
-    where: { id: { in: productIds } },
-  });
+    where: { id: { in: productIds } },});
 
   const total = items.reduce(
     (acc: number, item: { productId: number; quantity: number }) => {
@@ -51,18 +54,18 @@ export async function POST(req: Request) {
       userId,
       total,
       items: {
-        create: items.map((item: { productId: number; quantity: number }) => {
+        create: items.map(
+          (item: { productId: number; quantity: number }) => {
           const product = products.find((p) => p.id === item.productId);
           return {
             productId: item.productId,
             quantity: item.quantity,
             price: product?.price ?? 0,
           };
-        }),
+          },
+        ),
       },
     },
     include: { items: true },
   });
-
-  return NextResponse.json(order, { status: 201 });
-}
+  return NextResponse.json(order, { status: 201 });}
