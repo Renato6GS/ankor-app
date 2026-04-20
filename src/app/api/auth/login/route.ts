@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
+import { getSession } from "@/lib/auth";
 
 // V3 (INTENCIONAL): sin rate limiting ni contador de intentos.
 // V7 (INTENCIONAL): no se registra ningún intento (éxito ni fallo).
@@ -33,12 +33,10 @@ export async function POST(req: Request) {
     );
   }
 
-  const cookieStore = await cookies();
-  cookieStore.set(
-    "session",
-    JSON.stringify({ userId: user.id, role: user.role }),
-    { path: "/" },
-  );
+  const session = await getSession();
+  session.userId = user.id;
+  session.role = user.role as "CUSTOMER" | "ADMIN";
+  await session.save();
 
   return NextResponse.json({
     id: user.id,

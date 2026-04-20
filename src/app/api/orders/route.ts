@@ -1,19 +1,18 @@
 import { NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 import { prisma } from "../../../lib/db";
 
-// V6 (INTENCIONAL): lista TODOS los pedidos de TODOS los usuarios sin filtrar.
-// No valida sesión y no acota el resultado al userId del solicitante.
-// Mitigación posterior: requerir sesión y filtrar where: { userId: session.userId }
-// (o requerir rol ADMIN para ver el listado completo).
 export async function GET() {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
+  const where = auth.role === "ADMIN" ? {} : { userId: auth.userId };
+
   const orders = await prisma.order.findMany({
+    where,
     include: {
-      user: {
-        select: { id: true, email: true, name: true },
-      },
-      items: {
-        include: { product: true },
-      },
+      user: { select: { id: true, email: true, name: true } },
+      items: { include: { product: true } },
     },
     orderBy: { createdAt: "desc" },
   });
@@ -21,11 +20,15 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const { userId, items } = await req.json();
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
 
-  if (!userId || !Array.isArray(items) || items.length === 0) {
+  const { items } = await req.json();
+  const userId = auth.userId;
+
+  if (!Array.isArray(items) || items.length === 0) {
     return NextResponse.json(
-      { error: "userId e items son requeridos" },
+      { error: "items son requeridos" },
       { status: 400 },
     );
   }
@@ -48,16 +51,14 @@ export async function POST(req: Request) {
       userId,
       total,
       items: {
-        create: items.map(
-          (item: { productId: number; quantity: number }) => {
-            const product = products.find((p) => p.id === item.productId);
-            return {
-              productId: item.productId,
-              quantity: item.quantity,
-              price: product?.price ?? 0,
-            };
-          },
-        ),
+        create: items.map((item: { productId: number; quantity: number }) => {
+          const product = products.find((p) => p.id === item.productId);
+          return {
+            productId: item.productId,
+            quantity: item.quantity,
+            price: product?.price ?? 0,
+          };
+        }),
       },
     },
     include: { items: true },
