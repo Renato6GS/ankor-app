@@ -1,0 +1,15 @@
+1. Generar certs:
+
+mkdir -p ./nginx/ssl
+
+openssl req -x509 -nodes -days 365 \
+  -newkey rsa:2048 \
+  -keyout ./nginx/ssl/ankor.key \
+  -out ./nginx/ssl/ankor.crt \
+  -subj "/C=GT/ST=Guatemala/L=Guatemala/O=ANKOR/CN=localhost"
+
+chmod 600 ./nginx/ssl/ankor.key
+
+2. Detener nginx de WSL (si es que está corriendo y existe)
+
+sudo systemctl stop nginx
