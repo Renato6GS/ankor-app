@@ -2,10 +2,27 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import logger from "@/lib/logger";
 
 export async function POST(req: Request) {
-  const ip = req.headers.get("x-forwarded-for") ?? "unknown";
+  const ip = getClientIp(req);
+
+  const rate = checkRateLimit(ip);
+  if (!rate.allowed) {
+    logger.warn({ ip, retryAfter: rate.retryAfter }, "Rate limit excedido en login");
+    return NextResponse.json(
+      { error: "Demasiados intentos. Intenta de nuevo en unos segundos." },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(rate.retryAfter),
+          "X-RateLimit-Remaining": "0",
+        },
+      },
+    );
+  }
+
   const { email, password } = await req.json();
 
   if (!email || !password) {
