@@ -133,3 +133,6 @@ dist
 .DS_Store
 .vscode/
 responses/
+
+nginx/ssl/*.key
+nginx/ssl/*.crt
