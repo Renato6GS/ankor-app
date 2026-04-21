@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { prisma } from "../../../lib/db";
+import logger from "@/lib/logger";
 
 export async function GET() {
   const auth = await requireAuth();
@@ -20,6 +21,8 @@ export async function GET() {
     },
     orderBy: { createdAt: "desc" },
   });
+  logger.info({ userId: auth.userId, endpoint: "/api/orders" }, "Acceso API");
+
   return NextResponse.json(orders);
 }
 

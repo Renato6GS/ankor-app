@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../lib/db";
 import { requireAdmin } from "@/lib/auth";
+import logger from "@/lib/logger";
 
 export async function GET() {
   const auth = await requireAdmin();
@@ -11,6 +12,8 @@ export async function GET() {
     prisma.order.count(),
     prisma.order.aggregate({ _sum: { total: true } }),
   ]);
+
+  logger.info({ adminId: auth.userId, action: "ver_estadisticas" }, "Acción admin");
 
   return NextResponse.json({
     totalUsers,
