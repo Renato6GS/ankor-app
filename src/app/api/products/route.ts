@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../lib/db";
+import { requireAdmin } from "@/lib/auth";
 
 export async function GET() {
   const products = await prisma.product.findMany({
@@ -9,10 +10,10 @@ export async function GET() {
   return NextResponse.json(products);
 }
 
-// V6 (INTENCIONAL): el POST debería requerir rol ADMIN, pero no valida sesión.
-// Cualquiera puede crear productos haciendo un POST a /api/products.
-// Mitigación posterior: verificar sesión iron-session y user.role === ADMIN.
 export async function POST(req: Request) {
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   const { name, description, price, image, stock, categoryId } =
     await req.json();
 

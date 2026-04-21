@@ -20,11 +20,9 @@ services:
 
   app:
     build: .
+    env_file:
+      - .env
     environment:
-      # V5 (INTENCIONAL): la URL real ya está hardcodeada en src/lib/db.ts.
-      # Esta variable queda aquí solo como respaldo / documentación de la
-      # credencial expuesta. En la mitigación se leerá vía Docker secrets.
-      DATABASE_URL: "postgresql://ankor:ankor123@db:5432/ankor"
       NODE_ENV: production
     ports:
       - "3000:3000"      # V2: expuesto directamente al host, sin Nginx
