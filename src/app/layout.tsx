@@ -7,8 +7,8 @@ import {
 import { theme } from "../lib/theme";
 
 export const metadata = {
-  title: "Mantine Next.js template",
-  description: "I am using Mantine with Next.js!",
+  title: "Ankor app",
+  description: "Ankor, venta de ropa",
 };
 
 export default function RootLayout({ children }: { children: any }) {
